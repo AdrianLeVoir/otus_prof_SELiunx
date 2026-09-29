@@ -1,0 +1,118 @@
+---
+- hosts: ns01
+  become: true
+  tasks:
+  - name: install bind and selinux tools
+    ansible.builtin.dnf:
+      name:
+        - bind
+        - bind-utils
+        - policycoreutils-python-utils
+        - setools-console
+      state: present
+
+  - name: copy named.conf
+    copy:
+      src: files/ns01/named.conf
+      dest: /etc/named.conf
+      owner: root
+      group: named
+      mode: "0640"
+
+  - name: copy zone files (not ddns, not conf)
+    copy:
+      src: "{{ item }}"
+      dest: /etc/named/
+      owner: root
+      group: named
+      mode: "0660"
+    with_fileglob:
+      - files/ns01/named.dns*
+      - files/ns01/named.newdns*
+      - files/ns01/named.50*
+
+  - name: copy dynamic zone ddns.lab
+    copy:
+      src: files/ns01/named.ddns.lab
+      dest: /etc/named/dynamic/named.ddns.lab
+      owner: named
+      group: named
+      mode: "0660"
+
+  - name: copy dynamic zone ddns.lab.view1
+    copy:
+      src: files/ns01/named.ddns.lab.view1
+      dest: /etc/named/dynamic/named.ddns.lab.view1
+      owner: named
+      group: named
+      mode: "0660"
+
+  - name: copy transferkey to server
+    copy:
+      src: files/named.zonetransfer.key.special
+      dest: /etc/named.zonetransfer.key
+      owner: root
+      group: named
+      mode: "0644"
+
+  - name: set /etc/named permissions
+    file:
+      path: /etc/named
+      owner: root
+      group: named
+      mode: "0670"
+      state: directory
+      recurse: false
+
+  - name: set /etc/named/dynamic permissions
+    file:
+      path: /etc/named/dynamic
+      owner: root
+      group: named
+      mode: "0670"
+      state: directory
+
+  - name: resolv.conf points to self
+    copy:
+      content: "domain dns.lab\nsearch dns.lab\nnameserver 192.168.1.184\n"
+      dest: /etc/resolv.conf
+      owner: root
+      group: root
+      mode: "0644"
+
+  - name: stop stock nginx (free port 80, not needed for named)
+    systemd:
+      name: nginx
+      state: stopped
+    failed_when: false
+
+  - name: ensure named is running and enabled
+    systemd:
+      name: named
+      state: restarted
+      enabled: true
+
+- hosts: client
+  become: true
+  tasks:
+  - name: install bind-utils
+    ansible.builtin.apt:
+      name: dnsutils
+      state: present
+      update_cache: true
+
+  - name: copy resolv.conf to the client
+    copy:
+      src: files/client/resolv.conf
+      dest: /etc/resolv.conf
+      owner: root
+      group: root
+      mode: "0644"
+
+  - name: copy transferkey to client
+    copy:
+      src: files/named.zonetransfer.key.special
+      dest: /etc/named.zonetransfer.key
+      owner: root
+      group: root
+      mode: "0644"
